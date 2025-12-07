@@ -27,22 +27,18 @@ func SetEnv(spath []string, targetUser user.User) error {
 	}
 
 	if err := syscall.Setresgid(tgid, tgid, tgid); err != nil {
-		fmt.Print("set gid")
 		return err
 	}
 
 	if err := initGroup(tname, tgid); err != nil {
-		fmt.Print("init group")
 		return err
 	}
 
 	if err := syscall.Setresuid(uid, uid, uid); err != nil {
-		fmt.Print("set uid")
 		return err
 	}
 
 	if err := syscall.Setenv("PATH", strings.Join(spath, ":")); err != nil {
-		fmt.Print("set env")
 		return err
 	}
 

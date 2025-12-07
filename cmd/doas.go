@@ -36,12 +36,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	args := flag.Args()
-	if len(args) < 1 {
+	cmdArgs := flag.Args()
+	if len(cmdArgs) < 1 {
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
-	cmd := args[0]
+	cmd := cmdArgs[0]
+	args := cmdArgs[1:]
 
 	if err := auth.CheckConfig(currentUser); err != nil {
 		os.Exit(1)
@@ -65,7 +66,7 @@ func main() {
 
 	cmdPath, err := exec.LookPath(cmd)
 
-	rn := exec.Command(cmdPath)
+	rn := exec.Command(cmdPath, args...)
 	rn.Stdout = os.Stdout
 	rn.Stderr = os.Stderr
 	if err := rn.Run(); err != nil {
@@ -73,11 +74,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	// TODO: remove, for debug purposes only
 	fmt.Printf("%v", syscall.Geteuid())
 
 	if err != transaction.CloseSession(0) {
 		panic(err)
 	}
-	fmt.Printf("%v", syscall.Geteuid())
+
 	os.Exit(0)
 }
