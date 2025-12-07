@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/user"
 	"syscall"
 
@@ -41,7 +42,6 @@ func main() {
 		os.Exit(1)
 	}
 	cmd := args[0]
-	fmt.Printf("%s, %v\n", cmd, safePath)
 
 	if err := auth.CheckConfig(currentUser); err != nil {
 		os.Exit(1)
@@ -63,12 +63,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := syscall.Exec(cmd, args, safePath); err != nil {
-		fmt.Println("command failed:", err)
+	cmdPath, err := exec.LookPath(cmd)
+
+	rn := exec.Command(cmdPath)
+	rn.Stdout = os.Stdout
+	rn.Stderr = os.Stderr
+	if err := rn.Run(); err != nil {
+		fmt.Printf("%v", err)
+		os.Exit(1)
 	}
 
+	fmt.Printf("%v", syscall.Geteuid())
+
 	if err != transaction.CloseSession(0) {
-		panic("shiet")
+		panic(err)
 	}
 	fmt.Printf("%v", syscall.Geteuid())
 	os.Exit(0)
