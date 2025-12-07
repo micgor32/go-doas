@@ -10,7 +10,7 @@ import (
 	"golang.org/x/term"
 )
 
-func PamAuth(user string) bool {
+func PamAuth(user string) *pam.Transaction {
 	t, err := pam.StartFunc("login", user, func(s pam.Style, msg string) (string, error) {
 		switch s {
 		case pam.PromptEchoOff:
@@ -46,5 +46,5 @@ func PamAuth(user string) bool {
 		os.Exit(1)
 	}
 
-	return true
+	return t
 }
