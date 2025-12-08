@@ -6,7 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
-	"syscall"
+	"slices"
 
 	"go-doas/pkg/auth"
 )
@@ -23,6 +23,21 @@ var (
 		"/usr/local/sbin",
 	}
 )
+
+func run(path []string, cmdPath string, args []string, targetUser *user.User) error {
+	if err := auth.SetEnv(path, *targetUser); err != nil {
+		return err
+	}
+
+	rn := exec.Command(cmdPath, args...)
+	rn.Stdout = os.Stdout
+	rn.Stderr = os.Stderr
+	if err := rn.Run(); err != nil {
+		return err
+	}
+
+	return nil
+}
 
 func main() {
 	flag.Parse()
@@ -43,6 +58,8 @@ func main() {
 	}
 	cmd := cmdArgs[0]
 	args := cmdArgs[1:]
+	// let's not leave path empty
+	path := safePath
 
 	conf, err := auth.CheckConfig(currentUser)
 	if err != nil {
@@ -50,39 +67,52 @@ func main() {
 		os.Exit(1)
 	}
 
-	// TODO: add permit func that handles the logics of
-	// permissions based on the config file
-	fmt.Printf("%s\n", conf.Target)
-
-	transaction := auth.PamAuth(currentUser.Username)
-
-	if err := transaction.AcctMgmt(0); err != nil {
-		os.Exit(1)
-	}
-
-	if err := transaction.OpenSession(0); err != nil {
-		os.Exit(1)
-	}
-
-	if err := auth.SetEnv(safePath, *targetUser); err != nil {
+	if conf.Action == "deny" {
+		fmt.Print("not authorized(deny)\n")
 		os.Exit(1)
 	}
 
 	cmdPath, err := exec.LookPath(cmd)
 
-	rn := exec.Command(cmdPath, args...)
-	rn.Stdout = os.Stdout
-	rn.Stderr = os.Stderr
-	if err := rn.Run(); err != nil {
-		fmt.Printf("%v\n", err)
+	// after manpage: "The command the user is allowed or denied to run.
+	// The default is all commands."
+	if cmdPath != conf.Cmd && conf.Cmd != "" {
+		fmt.Printf("%s, %s\n", cmdPath, conf.Cmd)
+		fmt.Print("not authorized (cmd)\n")
 		os.Exit(1)
 	}
 
-	// TODO: remove, for debug purposes only
-	fmt.Printf("%v\n", syscall.Geteuid())
+	// options
+	nopass := slices.Contains(conf.Options, "nopass")
+	keepenv := slices.Contains(conf.Options, "keepenv")
+	if keepenv {
+		path = os.Environ()
+	}
 
-	if err != transaction.CloseSession(0) {
-		panic(err)
+	if !nopass {
+		transaction := auth.PamAuth(currentUser.Username)
+
+		if err := transaction.AcctMgmt(0); err != nil {
+			os.Exit(1)
+		}
+
+		if err := transaction.OpenSession(0); err != nil {
+			os.Exit(1)
+		}
+
+		if err := run(path, cmdPath, args, targetUser); err != nil {
+			fmt.Printf("%v\n", err)
+			os.Exit(1)
+		}
+
+		if err != transaction.CloseSession(0) {
+			panic(err)
+		}
+	} else {
+		if err := run(path, cmdPath, args, targetUser); err != nil {
+			fmt.Printf("%v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	os.Exit(0)
