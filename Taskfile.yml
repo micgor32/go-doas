@@ -1,0 +1,29 @@
+version: '3'
+
+env:
+  LDFLAGS: "-s -w"
+  PERMS: 4711
+
+tasks:
+  all:
+    cmds:
+      - task: build
+      - task: install
+
+  build:
+    dir: build
+    cmds:
+      - echo "Building go-doas"
+      - go build -ldflags="{{.LDFLAGS}}" -o doas ../cmd/doas.go
+  
+  install:
+    dir: build
+    cmds:
+      - echo "Installing doas into /usr/local/bin"
+      - install -m {{.PERMS}} ./doas /usr/local/bin/doas
+
+  clean:
+    dir: build
+    cmds:
+      - echo "Cleaning build/"
+      - rm ./doas

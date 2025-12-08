@@ -8,7 +8,6 @@ import (
 	"os/user"
 	"slices"
 	"strings"
-	"syscall"
 
 	"github.com/micgor32/go-doas/pkg/auth"
 )
@@ -92,7 +91,7 @@ func main() {
 	}
 
 	if setenv {
-
+		// TODO: implement handling the env setting
 	}
 
 	if !nopass {
@@ -110,10 +109,6 @@ func main() {
 			fmt.Printf("%v\n", err)
 			os.Exit(1)
 		}
-
-		e, _ := syscall.Getenv("PATH")
-
-		fmt.Printf("%v\n", e)
 
 		if err != transaction.CloseSession(0) {
 			panic(err)
