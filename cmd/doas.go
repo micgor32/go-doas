@@ -44,11 +44,15 @@ func main() {
 	cmd := cmdArgs[0]
 	args := cmdArgs[1:]
 
-	if err := auth.CheckConfig(currentUser); err != nil {
+	conf, err := auth.CheckConfig(currentUser)
+	if err != nil {
+		fmt.Printf("%v\n", err)
 		os.Exit(1)
 	}
 
-	// TODO: add also permit func
+	// TODO: add permit func that handles the logics of
+	// permissions based on the config file
+	fmt.Printf("%s\n", conf.Target)
 
 	transaction := auth.PamAuth(currentUser.Username)
 
@@ -70,12 +74,12 @@ func main() {
 	rn.Stdout = os.Stdout
 	rn.Stderr = os.Stderr
 	if err := rn.Run(); err != nil {
-		fmt.Printf("%v", err)
+		fmt.Printf("%v\n", err)
 		os.Exit(1)
 	}
 
 	// TODO: remove, for debug purposes only
-	fmt.Printf("%v", syscall.Geteuid())
+	fmt.Printf("%v\n", syscall.Geteuid())
 
 	if err != transaction.CloseSession(0) {
 		panic(err)
