@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"os/user"
 	"slices"
+	"strings"
+	"syscall"
 
 	"github.com/micgor32/go-doas/pkg/auth"
 )
@@ -24,8 +26,8 @@ var (
 	}
 )
 
-func run(path []string, cmdPath string, args []string, targetUser *user.User) error {
-	if err := auth.SetEnv(path, *targetUser); err != nil {
+func run(path []string, cmdPath string, args []string, targetUser *user.User, keep bool) error {
+	if err := auth.SetEnv(path, *targetUser, keep); err != nil {
 		return err
 	}
 
@@ -67,8 +69,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	if conf.Action == "deny" {
-		fmt.Print("not authorized(deny)\n")
+	if conf.Action != "permit" {
+		fmt.Print("not authorized\n")
 		os.Exit(1)
 	}
 
@@ -77,16 +79,20 @@ func main() {
 	// after manpage: "The command the user is allowed or denied to run.
 	// The default is all commands."
 	if cmdPath != conf.Cmd && conf.Cmd != "" {
-		fmt.Printf("%s, %s\n", cmdPath, conf.Cmd)
-		fmt.Print("not authorized (cmd)\n")
+		fmt.Print("not authorized\n")
 		os.Exit(1)
 	}
 
 	// options
 	nopass := slices.Contains(conf.Options, "nopass")
 	keepenv := slices.Contains(conf.Options, "keepenv")
+	setenv := slices.Contains(conf.Options, "setenv")
 	if keepenv {
-		path = os.Environ()
+		path = strings.Split(os.Getenv("PATH"), ":")
+	}
+
+	if setenv {
+
 	}
 
 	if !nopass {
@@ -100,16 +106,20 @@ func main() {
 			os.Exit(1)
 		}
 
-		if err := run(path, cmdPath, args, targetUser); err != nil {
+		if err := run(path, cmdPath, args, targetUser, keepenv); err != nil {
 			fmt.Printf("%v\n", err)
 			os.Exit(1)
 		}
+
+		e, _ := syscall.Getenv("PATH")
+
+		fmt.Printf("%v\n", e)
 
 		if err != transaction.CloseSession(0) {
 			panic(err)
 		}
 	} else {
-		if err := run(path, cmdPath, args, targetUser); err != nil {
+		if err := run(path, cmdPath, args, targetUser, keepenv); err != nil {
 			fmt.Printf("%v\n", err)
 			os.Exit(1)
 		}

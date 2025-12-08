@@ -7,3 +7,11 @@ initially [written by Ted Unangst](http://www.tedunangst.com/flak/post/doas)
 of the OpenBSD project to provide 95% of the features of `sudo` with a
 fraction of the codebase. `go-doas` is a minimal Go implementation of [OpenDoas](https://github.com/Duncaen/OpenDoas) port. 
 
+## Installation and Usage
+
+## Configuration
+
+## TODO
+
+## Disclaimer
+

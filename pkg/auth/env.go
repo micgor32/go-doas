@@ -14,7 +14,7 @@ import (
 	"unsafe"
 )
 
-func SetEnv(spath []string, targetUser user.User) error {
+func SetEnv(spath []string, targetUser user.User, keep bool) error {
 	tgid, err := strconv.Atoi(targetUser.Gid)
 	if err != nil {
 		return err
@@ -36,6 +36,10 @@ func SetEnv(spath []string, targetUser user.User) error {
 
 	if err := syscall.Setresuid(uid, uid, uid); err != nil {
 		return err
+	}
+
+	if !keep {
+		syscall.Clearenv()
 	}
 
 	if err := syscall.Setenv("PATH", strings.Join(spath, ":")); err != nil {

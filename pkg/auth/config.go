@@ -16,6 +16,7 @@ type Entry struct {
 	Target   string
 	Cmd      string
 	CmdArgs  []string
+	Env      []string
 }
 
 const confpath = "/etc/doas.conf"
@@ -97,8 +98,36 @@ func fillEntry(tokens []string, entry *Entry, id int) error {
 			break
 		}
 
-		if !slices.Contains(validOptions, tok) {
+		if !slices.Contains(validOptions, tok) && !strings.HasPrefix(tok, "{") {
 			break
+		}
+
+		if strings.HasPrefix(tok, "setenv{") {
+			// Handle the case where setenv is like: setenv{FOO=bar BAZ}
+			envSpec := tok
+
+			// accumulate until closing brace is found
+			for !strings.Contains(envSpec, "}") {
+				id++
+				if id >= len(tokens) {
+					return fmt.Errorf("wrong format, check your doas.conf")
+				}
+				envSpec += " " + tokens[id]
+			}
+
+			start := strings.Index(envSpec, "{")
+			end := strings.LastIndex(envSpec, "}")
+			if start < 0 || end < 0 || end <= start {
+				return fmt.Errorf("wrong format, check your doas.conf")
+			}
+
+			inside := envSpec[start+1 : end]
+			parts := strings.Fields(inside)
+
+			entry.Env = append(entry.Env, parts...)
+
+			id++
+			continue
 		}
 
 		entry.Options = append(entry.Options, tok)
@@ -106,7 +135,7 @@ func fillEntry(tokens []string, entry *Entry, id int) error {
 	}
 
 	if id >= len(tokens) {
-		return fmt.Errorf("invalid entry: identity missing")
+		return fmt.Errorf("wrong format, check your doas.conf")
 	}
 	entry.Identity = tokens[id]
 	id++
@@ -119,7 +148,7 @@ func fillEntry(tokens []string, entry *Entry, id int) error {
 	if id < len(tokens) && tokens[id] == "cmd" {
 		id++
 		if id >= len(tokens) {
-			return fmt.Errorf("cmd keyword present but no command")
+			return nil
 		}
 
 		entry.Cmd = tokens[id]

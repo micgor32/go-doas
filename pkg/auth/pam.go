@@ -37,12 +37,12 @@ func PamAuth(user string) *pam.Transaction {
 		}
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "start: %s\n", err.Error())
+		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
 		os.Exit(1)
 	}
 	err = t.Authenticate(0)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "authenticate: %s\n", err.Error())
+		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
 		os.Exit(1)
 	}
 
