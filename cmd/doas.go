@@ -8,7 +8,7 @@ import (
 	"os/user"
 	"slices"
 
-	"go-doas/pkg/auth"
+	"github.com/micgor32/go-doas/pkg/auth"
 )
 
 var (

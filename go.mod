@@ -1,4 +1,4 @@
-module go-doas
+module github.com/micgor32/go-doas
 
 go 1.25.4
 
