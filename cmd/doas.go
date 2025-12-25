@@ -8,6 +8,7 @@ import (
 	"os/user"
 	"slices"
 	"strings"
+	// "time"
 
 	"github.com/micgor32/go-doas/pkg/auth"
 )
@@ -27,6 +28,13 @@ var (
 
 func run(path []string, cmdPath string, args []string, targetUser *user.User, keep bool) error {
 	if err := auth.SetEnv(path, *targetUser, keep); err != nil {
+		return err
+	}
+
+	var tme uint64
+	var tty int
+
+	if err := auth.ProcInfo(os.Getpid(), &tty, &tme); err != nil {
 		return err
 	}
 
