@@ -31,13 +31,6 @@ func run(path []string, cmdPath string, args []string, targetUser *user.User, ke
 		return err
 	}
 
-	var tme uint64
-	var tty int
-
-	if err := auth.ProcInfo(os.Getpid(), &tty, &tme); err != nil {
-		return err
-	}
-
 	rn := exec.Command(cmdPath, args...)
 	rn.Stdout = os.Stdout
 	rn.Stderr = os.Stderr
@@ -94,12 +87,26 @@ func main() {
 	nopass := slices.Contains(conf.Options, "nopass")
 	keepenv := slices.Contains(conf.Options, "keepenv")
 	setenv := slices.Contains(conf.Options, "setenv")
+	persist := slices.Contains(conf.Options, "persist")
 	if keepenv {
 		path = strings.Split(os.Getenv("PATH"), ":")
 	}
 
 	if setenv {
 		// TODO: implement handling the env setting
+	}
+
+	if persist {
+		var valid int
+		err := auth.TimestampOpen(&valid, 5*60)
+		if err != nil {
+			fmt.Printf("shit: %v", err)
+			os.Exit(1)
+		}
+
+		if valid == 1 {
+			nopass = true
+		}
 	}
 
 	if !nopass {
@@ -111,6 +118,12 @@ func main() {
 
 		if err := transaction.OpenSession(0); err != nil {
 			os.Exit(1)
+		}
+
+		if persist {
+			if err := auth.TimestampSetAfterAuth(5 * 60); err != nil {
+				fmt.Printf("warning: failed to set timestamp: %v\n", err)
+			}
 		}
 
 		if err := run(path, cmdPath, args, targetUser, keepenv); err != nil {
