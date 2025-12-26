@@ -175,6 +175,8 @@ func TimestampSet(path string, secs int64) error {
 // similrly as with timestampSet, this is a "translation". We could limit the amount
 // of syscalls and use more of Go unix package, specifically statx_t and its timestamp
 func timestampCheck(path string, secs int64) (int, error) {
+	// 0411 is based on perms from OpenDoas. Reminder to verify correctness
+	// here as well.
 	f, err := os.OpenFile(path, os.O_RDONLY|unix.O_NOFOLLOW, 0411)
 	if err != nil {
 		return 0, err
@@ -192,8 +194,7 @@ func timestampCheck(path string, secs int64) (int, error) {
 	if st.Uid != 0 ||
 		st.Gid != uint32(os.Getgid()) ||
 		(st.Mode&syscall.S_IFMT) != syscall.S_IFREG || (st.Mode&0777) != 0 {
-		fmt.Printf("%d, %d, %d, %d\n", st.Gid, (st.Mode & syscall.S_IFMT), st.Mode, st.Mode&0777)
-		if err := timestampClear(); err != nil {
+		if err := timestampClear(path, *f); err != nil {
 			return 0, err
 		}
 		return 0, nil //fmt.Errorf("timestamp uid, gid or mode wrong") to be considered, we could fail "loudly" here as well
@@ -205,13 +206,13 @@ func timestampCheck(path string, secs int64) (int, error) {
 
 	var now [2]unix.Timespec
 	if err := unix.ClockGettime(unix.CLOCK_BOOTTIME, &now[0]); err != nil {
-		if err = timestampClear(); err != nil {
+		if err = timestampClear(path, *f); err != nil {
 			return 0, err
 		}
 		return 0, nil
 	}
 	if err := unix.ClockGettime(unix.CLOCK_REALTIME, &now[1]); err != nil {
-		if err = timestampClear(); err != nil {
+		if err = timestampClear(path, *f); err != nil {
 			return 0, err
 		}
 		return 0, nil
@@ -233,8 +234,7 @@ func timestampCheck(path string, secs int64) (int, error) {
 		timespecLess(st.Mtim, lowerReal) ||
 		timespecGreater(st.Atim, upperBoot) ||
 		timespecGreater(st.Mtim, upperReal) {
-		fmt.Println("so we unlink")
-		err = timestampClear()
+		err = timestampClear(path, *f)
 		if err != nil {
 			return 0, err
 		}
@@ -244,15 +244,15 @@ func timestampCheck(path string, secs int64) (int, error) {
 	return 1, nil
 }
 
-func timestampClear() error {
-	var path string
-	var f *os.File
-
-	if err := timestampPath(&f, &path); err != nil {
-		return err
-	}
-
-	if err := syscall.Unlink(path); err != nil {
+func timestampClear(path string, f os.File) error {
+	// Originally OpenDoas uses unlink(2) syscall.
+	// While we could just do the same here (which was
+	// my original thought), os.Remove does exactly
+	// that under the hood (see https://cs.opensource.google/go/go/+/go1.25.5:src/os/file_unix.go;l=356).
+	// Use of standard library is obviously better idea than
+	// raw syscalls, mainly cause I strongly believe that
+	// people who wrote Go are smarter than me :D
+	if err := os.Remove(path); err != nil {
 		return err
 	}
 
@@ -278,7 +278,6 @@ func TimestampOpen(secs int64) (int, error) {
 		return 0, err
 	}
 
-	// monkeypatch, reminder to check if we can remove
 	if fd == nil {
 		return 0, nil
 	}
@@ -296,13 +295,16 @@ func TimestampSetAfterAuth(secs int64) error {
 	var path string
 	var f *os.File
 
-	if err := timestampPath(&f, &path); err != nil {
+	err := timestampPath(&f, &path)
+	if err != nil {
 		return err
 	}
 
 	if f == nil {
-		var err error
-		f, err = os.OpenFile(path, os.O_CREATE|os.O_TRUNC, 0000) //os.Create(path)
+		// Rationale behind using os.OpenFile instead of NewFile is simple:
+		// these are doing exaclty the same (given O_CREATE is passed for OpenFile),
+		// but NewFile does not let us pass permissions for the new file.
+		f, err = os.OpenFile(path, os.O_CREATE|os.O_TRUNC|unix.O_NOFOLLOW, 0000)
 		if err != nil {
 			return err
 		}

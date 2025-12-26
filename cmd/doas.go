@@ -8,7 +8,6 @@ import (
 	"os/user"
 	"slices"
 	"strings"
-	// "time"
 
 	"github.com/micgor32/go-doas/pkg/auth"
 )
