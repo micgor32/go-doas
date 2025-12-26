@@ -10,28 +10,24 @@ import (
 	"strconv"
 	"syscall"
 
-	// "time"
-
 	"golang.org/x/sys/unix"
-	// "strings"
-	//"time"
 )
 
 const (
 	TIMESTAMP_DIR string = "/run/doas"
 )
 
-func ProcInfo(pid int, ttyNo *int, startTime *uint64) error {
+func ProcInfo(pid int) (int, uint64, error) {
 	const bufSize = 1024
 	buf := make([]byte, bufSize)
 	path := fmt.Sprintf("/proc/%d/stat", pid)
 	if _, err := os.Stat(path); err != nil {
-		return err
+		return 0, 0, err
 	}
 
-	f, err := os.OpenFile(path, os.O_RDONLY, 0444)
+	f, err := os.OpenFile(path, os.O_RDONLY|unix.O_NOFOLLOW, 0444)
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	defer f.Close()
 
@@ -51,7 +47,7 @@ func ProcInfo(pid int, ttyNo *int, startTime *uint64) error {
 			if err == io.EOF {
 				break
 			}
-			return err
+			return 0, 0, err
 		}
 
 		if tmp == 0 {
@@ -60,41 +56,35 @@ func ProcInfo(pid int, ttyNo *int, startTime *uint64) error {
 	}
 
 	if tmp != 0 || bytes.IndexByte(buf[:p], 0) != -1 {
-		return fmt.Errorf("NUL in: %s", path)
+		return 0, 0, fmt.Errorf("NUL in: %s", path)
 	}
 
 	fld := bytes.IndexAny(buf[:p], ")")
 	if fld == -1 {
-		return fmt.Errorf("-1")
+		return 0, 0, fmt.Errorf("-1")
 	}
 
 	t := bytes.Fields(buf[fld+1 : p])
 
-	// prints for debug only
-	// fmt.Println(string(buf[:p]))
-	// fmt.Println(string(t[4]))  // this is ttyno
-	// fmt.Println(string(t[19])) // this should be starttime
 	// this should be handled cleaner, i.e. directly converting
 	// byte field elem to int
-	*ttyNo, err = strconv.Atoi(string(t[4]))
+	ttyNo, err := strconv.Atoi(string(t[4]))
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 
 	// same here
-	*startTime, err = strconv.ParseUint(string(t[19]), 10, 64)
+	startTime, err := strconv.ParseUint(string(t[19]), 10, 64)
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 
-	return nil
+	return ttyNo, startTime, nil
 }
 
 func timestampPath(file **os.File, path *string) error {
 	var (
-		ttynr     int
-		starttime uint64
-		fd        *os.File
+		fd *os.File
 	)
 	ppid := os.Getppid()
 	sid, err := unix.Getsid(0)
@@ -102,24 +92,12 @@ func timestampPath(file **os.File, path *string) error {
 		return err
 	}
 
-	if err := ProcInfo(ppid, &ttynr, &starttime); err != nil {
+	ttynr, starttime, err := ProcInfo(ppid)
+	if err != nil {
 		return err
 	}
 
 	p := fmt.Sprintf("%s/%d-%d-%d-%d-%d", TIMESTAMP_DIR, ppid, sid, ttynr, starttime, os.Getuid())
-
-	// if _, err := os.Stat(p); err != nil {
-	// 	// TODO: add distinction for the patricular err (non existent file)
-	// 	fd, err = os.Create(p)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// 	if err = TimestampSet(p, secs); err != nil {
-	// 		return err
-	// 	}
-	// 	// prob we could set pointers here and return already,
-	// 	// doing it later is redundand (i think for now)
-	// }
 
 	fd, err = os.Open(p)
 	if err != nil {
@@ -197,7 +175,7 @@ func TimestampSet(path string, secs int64) error {
 // similrly as with timestampSet, this is a "translation". We could limit the amount
 // of syscalls and use more of Go unix package, specifically statx_t and its timestamp
 func timestampCheck(path string, secs int64) (int, error) {
-	f, err := os.OpenFile(path, os.O_RDONLY, 0411)
+	f, err := os.OpenFile(path, os.O_RDONLY|unix.O_NOFOLLOW, 0411)
 	if err != nil {
 		return 0, err
 	}
@@ -211,12 +189,15 @@ func timestampCheck(path string, secs int64) (int, error) {
 		return 0, fmt.Errorf("not a syscall.Stat_t")
 	}
 
-	// if st.Uid != 0 ||
-	// 	st.Gid != uint32(os.Getgid()) ||
-	// 	(st.Mode&syscall.S_IFMT) != syscall.S_IFREG ||
-	// 	(st.Mode&0777) != 0 {
-	// 	return 0, fmt.Errorf("timestamp uid, gid or mode wrong")
-	// }
+	if st.Uid != 0 ||
+		st.Gid != uint32(os.Getgid()) ||
+		(st.Mode&syscall.S_IFMT) != syscall.S_IFREG || (st.Mode&0777) != 0 {
+		fmt.Printf("%d, %d, %d, %d\n", st.Gid, (st.Mode & syscall.S_IFMT), st.Mode, st.Mode&0777)
+		if err := timestampClear(); err != nil {
+			return 0, err
+		}
+		return 0, nil //fmt.Errorf("timestamp uid, gid or mode wrong") to be considered, we could fail "loudly" here as well
+	}
 
 	if !timespecIsSet(st.Atim) || !timespecIsSet(st.Mtim) {
 		return 0, nil
@@ -236,32 +217,6 @@ func timestampCheck(path string, secs int64) (int, error) {
 		return 0, nil
 	}
 
-	// tsBoot := syscall.Timespec{Sec: now[0].Sec, Nsec: now[0].Nsec}
-	// tsReal := syscall.Timespec{Sec: now[1].Sec, Nsec: now[1].Nsec}
-
-	// if timespecLess(st.Atim, tsBoot) ||
-	// 	timespecLess(st.Mtim, tsReal) {
-	// 	if err = timestampClear(); err != nil {
-	// 		return 0, err
-	// 	}
-
-	// 	return 0, nil
-	// }
-
-	// timeout := unix.Timespec{Sec: secs, Nsec: 0}
-	// timespecAdd(&now[0], &timeout)
-	// timespecAdd(&now[1], &timeout)
-
-	// if timespecGreater(st.Atim, tsBoot) ||
-	// 	timespecGreater(st.Mtim, tsReal) {
-	// 	if err = timestampClear(); err != nil {
-	// 		return 0, err
-	// 	}
-
-	// 	return 0, nil
-	// }
-	//
-	// lower bound: now
 	lowerBoot := syscall.Timespec{Sec: now[0].Sec, Nsec: now[0].Nsec}
 	lowerReal := syscall.Timespec{Sec: now[1].Sec, Nsec: now[1].Nsec}
 
@@ -278,11 +233,13 @@ func timestampCheck(path string, secs int64) (int, error) {
 		timespecLess(st.Mtim, lowerReal) ||
 		timespecGreater(st.Atim, upperBoot) ||
 		timespecGreater(st.Mtim, upperReal) {
-		_ = timestampClear()
+		fmt.Println("so we unlink")
+		err = timestampClear()
+		if err != nil {
+			return 0, err
+		}
 		return 0, nil
 	}
-
-	return 1, nil
 
 	return 1, nil
 }
@@ -304,38 +261,35 @@ func timestampClear() error {
 	return nil
 }
 
-func TimestampOpen(valid *int, secs int64) error {
+func TimestampOpen(secs int64) (int, error) {
 	var path string
 	var fd *os.File
-	//var ts [2]unix.Timespec
-	*valid = 0
 
 	if _, err := os.Stat(TIMESTAMP_DIR); err != nil {
-		// could be handled better, for now let's just assume
-		// that only error that can happen will be path not found
-		os.Mkdir(TIMESTAMP_DIR, 0711)
+		if errors.Is(err, fs.ErrNotExist) {
+			os.Mkdir(TIMESTAMP_DIR, 0711)
+		} else {
+			return 0, err
+		}
 	}
 
 	err := timestampPath(&fd, &path)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// monkeypatch, reminder to check if we can remove
 	if fd == nil {
-		return nil
+		return 0, nil
 	}
 	defer fd.Close()
 
 	v, err := timestampCheck(path, secs)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
-	*valid = v
-	// for now let's skip the case when file does not exists here, and let
-	// timestampPath handle everything
-	return nil
+	return v, nil
 }
 
 func TimestampSetAfterAuth(secs int64) error {
@@ -348,7 +302,7 @@ func TimestampSetAfterAuth(secs int64) error {
 
 	if f == nil {
 		var err error
-		f, err = os.Create(path)
+		f, err = os.OpenFile(path, os.O_CREATE|os.O_TRUNC, 0000) //os.Create(path)
 		if err != nil {
 			return err
 		}

@@ -26,6 +26,10 @@ var (
 	}
 )
 
+const (
+	timeout int64 = 1 * 60
+)
+
 func run(path []string, cmdPath string, args []string, targetUser *user.User, keep bool) error {
 	if err := auth.SetEnv(path, *targetUser, keep); err != nil {
 		return err
@@ -97,10 +101,8 @@ func main() {
 	}
 
 	if persist {
-		var valid int
-		err := auth.TimestampOpen(&valid, 5*60)
+		valid, err := auth.TimestampOpen(timeout)
 		if err != nil {
-			fmt.Printf("shit: %v", err)
 			os.Exit(1)
 		}
 
@@ -121,7 +123,7 @@ func main() {
 		}
 
 		if persist {
-			if err := auth.TimestampSetAfterAuth(5 * 60); err != nil {
+			if err := auth.TimestampSetAfterAuth(timeout); err != nil {
 				fmt.Printf("warning: failed to set timestamp: %v\n", err)
 			}
 		}
