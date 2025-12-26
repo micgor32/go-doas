@@ -13,8 +13,9 @@ import (
 )
 
 var (
-	usr      = flag.String("u", "root", "User as whom the following command should be executed")
-	itc      = flag.Bool("i", false, "Interactive session (eqv. to sudo -i)")
+	usr      = flag.String("u", "root", "User as whom the following command should be executed.")
+	itc      = flag.Bool("i", false, "Interactive session (eqv. to sudo -i).")
+	clear    = flag.Bool("L", false, "Clear any persisted authentications from previous invocations, then immediately exit. No command is executed.")
 	safePath = []string{
 		"/bin",
 		"/sbin",
@@ -65,6 +66,20 @@ func main() {
 	args := cmdArgs[1:]
 	// let's not leave path empty
 	path := safePath
+
+	if *clear {
+		fd, path, err := auth.TimestampPath()
+		if err != nil {
+			os.Exit(1)
+		}
+
+		if err := auth.TimestampClear(path, fd); err != nil {
+			fmt.Print("nothing to clear\n")
+			os.Exit(1)
+		}
+
+		os.Exit(0)
+	}
 
 	conf, err := auth.CheckConfig(currentUser)
 	if err != nil {

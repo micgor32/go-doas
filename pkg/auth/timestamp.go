@@ -82,37 +82,35 @@ func ProcInfo(pid int) (int, uint64, error) {
 	return ttyNo, startTime, nil
 }
 
-func timestampPath(file **os.File, path *string) error {
-	var (
-		fd *os.File
-	)
+func TimestampPath() (os.File, string, error) {
+	// This is bit hacky. The "empty" is there to act as dummy
+	// file that we will use later in timestampOpen* functions
+	// to decide whether the actual timestamp file was created.
+	// Probably bit of an overengineering but for now I leave it
+	// like this :D Important: we do NOT close "empty", ever.
+	empty := os.NewFile(uintptr(syscall.Stdin), "/dev/stdin")
 	ppid := os.Getppid()
 	sid, err := unix.Getsid(0)
 	if err != nil {
-		return err
+		return *empty, "", err
 	}
 
 	ttynr, starttime, err := ProcInfo(ppid)
 	if err != nil {
-		return err
+		return *empty, "", err
 	}
 
 	p := fmt.Sprintf("%s/%d-%d-%d-%d-%d", TIMESTAMP_DIR, ppid, sid, ttynr, starttime, os.Getuid())
 
-	fd, err = os.Open(p)
+	fd, err := os.Open(p)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			*file = nil
-			*path = p
-			return nil
+			return *empty, p, nil
 		}
-		return err
+		return *empty, "", err
 	}
 
-	*file = fd
-	*path = p
-
-	return nil
+	return *fd, p, nil
 }
 
 // helpers based on time.h from OpenBSD
@@ -194,7 +192,7 @@ func timestampCheck(path string, secs int64) (int, error) {
 	if st.Uid != 0 ||
 		st.Gid != uint32(os.Getgid()) ||
 		(st.Mode&syscall.S_IFMT) != syscall.S_IFREG || (st.Mode&0777) != 0 {
-		if err := timestampClear(path, *f); err != nil {
+		if err := TimestampClear(path, *f); err != nil {
 			return 0, err
 		}
 		return 0, nil //fmt.Errorf("timestamp uid, gid or mode wrong") to be considered, we could fail "loudly" here as well
@@ -206,13 +204,13 @@ func timestampCheck(path string, secs int64) (int, error) {
 
 	var now [2]unix.Timespec
 	if err := unix.ClockGettime(unix.CLOCK_BOOTTIME, &now[0]); err != nil {
-		if err = timestampClear(path, *f); err != nil {
+		if err = TimestampClear(path, *f); err != nil {
 			return 0, err
 		}
 		return 0, nil
 	}
 	if err := unix.ClockGettime(unix.CLOCK_REALTIME, &now[1]); err != nil {
-		if err = timestampClear(path, *f); err != nil {
+		if err = TimestampClear(path, *f); err != nil {
 			return 0, err
 		}
 		return 0, nil
@@ -234,7 +232,7 @@ func timestampCheck(path string, secs int64) (int, error) {
 		timespecLess(st.Mtim, lowerReal) ||
 		timespecGreater(st.Atim, upperBoot) ||
 		timespecGreater(st.Mtim, upperReal) {
-		err = timestampClear(path, *f)
+		err = TimestampClear(path, *f)
 		if err != nil {
 			return 0, err
 		}
@@ -244,7 +242,7 @@ func timestampCheck(path string, secs int64) (int, error) {
 	return 1, nil
 }
 
-func timestampClear(path string, f os.File) error {
+func TimestampClear(path string, f os.File) error {
 	// Originally OpenDoas uses unlink(2) syscall.
 	// While we could just do the same here (which was
 	// my original thought), os.Remove does exactly
@@ -262,8 +260,8 @@ func timestampClear(path string, f os.File) error {
 }
 
 func TimestampOpen(secs int64) (int, error) {
-	var path string
-	var fd *os.File
+	// var path string
+	// var fd os.File
 
 	if _, err := os.Stat(TIMESTAMP_DIR); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -273,14 +271,19 @@ func TimestampOpen(secs int64) (int, error) {
 		}
 	}
 
-	err := timestampPath(&fd, &path)
+	fd, path, err := TimestampPath()
 	if err != nil {
 		return 0, err
 	}
 
-	if fd == nil {
+	// We assume here that stdin for whatever pid was assign for us
+	// was not closed. Based on that assumption, we can say that the
+	// file descriptor of an actual timestamp won't be 0 (or 1 or 2 tbf),
+	// as they are reserved on any POSIX following OS (see https://www.man7.org/linux/man-pages/man3/stdin.3.html).
+	if fd.Fd() == 0 {
 		return 0, nil
 	}
+
 	defer fd.Close()
 
 	v, err := timestampCheck(path, secs)
@@ -292,24 +295,26 @@ func TimestampOpen(secs int64) (int, error) {
 }
 
 func TimestampSetAfterAuth(secs int64) error {
-	var path string
-	var f *os.File
+	var fd *os.File
 
-	err := timestampPath(&f, &path)
+	f, path, err := TimestampPath()
 	if err != nil {
 		return err
 	}
 
-	if f == nil {
+	// see the comment above in TimestampOpen
+	if f.Fd() == 0 {
 		// Rationale behind using os.OpenFile instead of NewFile is simple:
 		// these are doing exaclty the same (given O_CREATE is passed for OpenFile),
 		// but NewFile does not let us pass permissions for the new file.
-		f, err = os.OpenFile(path, os.O_CREATE|os.O_TRUNC|unix.O_NOFOLLOW, 0000)
+		fd, err = os.OpenFile(path, os.O_CREATE|os.O_TRUNC|unix.O_NOFOLLOW, 0000)
 		if err != nil {
 			return err
 		}
 	}
-	defer f.Close()
+	fd = &f
+
+	defer fd.Close()
 
 	return TimestampSet(path, secs)
 }
