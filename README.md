@@ -7,6 +7,9 @@ initially [written by Ted Unangst](http://www.tedunangst.com/flak/post/doas)
 of the OpenBSD project to provide 95% of the features of `sudo` with a
 fraction of the codebase. `go-doas` is a minimal Go implementation of [OpenDoas](https://github.com/Duncaen/OpenDoas) port. 
 
+Authentication is based on [PAM](https://github.com/linux-pam/linux-pam), implemented using [Go PAM wrapper](https://github.com/msteinert/pam) (please note here
+that this makes `go-doas` indirectly dependent on [cgo](https://go.dev/wiki/cgo)).
+
 ## Installation and Usage
 The recommended way to install `go-doas` is to use the provided [`Taskfile`](https://github.com/go-task/task).
 

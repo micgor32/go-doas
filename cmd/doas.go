@@ -13,8 +13,9 @@ import (
 )
 
 var (
-	usr      = flag.String("u", "root", "User as whom the following command should be executed")
-	itc      = flag.Bool("i", false, "Interactive session (eqv. to sudo -i)")
+	usr      = flag.String("u", "root", "User as whom the following command should be executed.")
+	itc      = flag.Bool("i", false, "Interactive session (eqv. to sudo -i).")
+	clear    = flag.Bool("L", false, "Clear any persisted authentications from previous invocations, then immediately exit. No command is executed.")
 	safePath = []string{
 		"/bin",
 		"/sbin",
@@ -23,6 +24,10 @@ var (
 		"/usr/local/bin",
 		"/usr/local/sbin",
 	}
+)
+
+const (
+	timeout int64 = 1 * 60
 )
 
 func run(path []string, cmdPath string, args []string, targetUser *user.User, keep bool) error {
@@ -62,6 +67,20 @@ func main() {
 	// let's not leave path empty
 	path := safePath
 
+	if *clear {
+		fd, path, err := auth.TimestampPath()
+		if err != nil {
+			os.Exit(1)
+		}
+
+		if err := auth.TimestampClear(path, fd); err != nil {
+			fmt.Print("nothing to clear\n")
+			os.Exit(1)
+		}
+
+		os.Exit(0)
+	}
+
 	conf, err := auth.CheckConfig(currentUser)
 	if err != nil {
 		fmt.Printf("%v\n", err)
@@ -86,12 +105,24 @@ func main() {
 	nopass := slices.Contains(conf.Options, "nopass")
 	keepenv := slices.Contains(conf.Options, "keepenv")
 	setenv := slices.Contains(conf.Options, "setenv")
+	persist := slices.Contains(conf.Options, "persist")
 	if keepenv {
 		path = strings.Split(os.Getenv("PATH"), ":")
 	}
 
 	if setenv {
 		// TODO: implement handling the env setting
+	}
+
+	if persist {
+		valid, err := auth.TimestampOpen(timeout)
+		if err != nil {
+			os.Exit(1)
+		}
+
+		if valid == 1 {
+			nopass = true
+		}
 	}
 
 	if !nopass {
@@ -103,6 +134,12 @@ func main() {
 
 		if err := transaction.OpenSession(0); err != nil {
 			os.Exit(1)
+		}
+
+		if persist {
+			if err := auth.TimestampSetAfterAuth(timeout); err != nil {
+				fmt.Printf("warning: failed to set timestamp: %v\n", err)
+			}
 		}
 
 		if err := run(path, cmdPath, args, targetUser, keepenv); err != nil {
