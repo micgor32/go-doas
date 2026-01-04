@@ -51,14 +51,13 @@ func CheckConfig(user *user.User) (Entry, error) {
 	for _, line := range fileLines {
 		temp, tempFound, err := processEntry(line, gids, uname)
 
+		if err != nil {
+			return Entry{}, err
+		}
+
 		if tempFound {
 			entry = temp
 			found = tempFound
-			break
-		}
-
-		if err != nil {
-			return Entry{}, err
 		}
 	}
 

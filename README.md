@@ -18,20 +18,20 @@ Usage:
 doas <options> <command>
 
 Options:
+  -L	Clear any persisted authentications from previous invocations, then immediately exit. No command is executed.
   -i	Interactive session (eqv. to sudo -i)
   -u string
     	User as whom the following command should be executed (default "root")
 ```
 
 ## Configuration
-`go-doas` is mostly compatible with [`doas.conf`](https://man.openbsd.org/doas.conf.5) format, with one exception:
-in `doas` the last matching rule determines the action taken. In `go-doas` the first matching rule determines the action taken.
-If no rule matches, same as in `doas`, the action is denied.
+`go-doas` is compatible with `doas` configuration. Please see the manpage dedicated to [`doas.conf`](https://man.openbsd.org/doas.conf.5) for more details.
 
 ## TODO
-- Timestamps
 - setenv
 - interactive session
+- integration tests
+- docs
 
 ## Disclaimer
 This port is a hobby project, for the time being there is no clearly defined policy for reacting to potential security issues. Therefore, it should NOT
